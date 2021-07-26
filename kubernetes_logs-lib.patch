@@ -1,0 +1,16 @@
+diff --git a/src/kubernetes/reflector.rs b/src/kubernetes/reflector.rs
+index b2e2f92..303383f 100644
+--- a/src/kubernetes/reflector.rs
++++ b/src/kubernetes/reflector.rs
+@@ -195,6 +195,11 @@ where
+         match event {
+             WatchEvent::Added(object) => {
+                 trace!(message = "Got an object event.", event = "added");
++                println!("Got object: {}", object.KIND);
++                // Add owner here
++                //if object.metadata.owner_references.len() > 0 {
++                //    println!("Got {} {}", object.metadata.owner_references[0].kind, object.metadata.owner_references[0].name);
++                //}
+                 self.state_writer.add(object).await;
+             }
+             WatchEvent::Deleted(object) => {
