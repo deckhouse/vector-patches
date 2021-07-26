@@ -2,7 +2,10 @@
 
 CUR_PATH=$(pwd)
 VECTOR_PATH=${CUR_PATH}/vector
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+if [ ! -e $HOME/.cargo/env ]; then
+  echo "Installing rust toolchain"
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+fi
 source "$HOME/.cargo/env"
 cargo install cross
 git clone --depth 1 --branch v0.15.0 https://github.com/timberio/vector.git
