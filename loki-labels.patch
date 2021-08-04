@@ -1,5 +1,5 @@
 diff --git a/src/sinks/loki.rs b/src/sinks/loki.rs
-index 67b9d54..7edd9b2 100644
+index 67b9d54..833f74a 100644
 --- a/src/sinks/loki.rs
 +++ b/src/sinks/loki.rs
 @@ -26,10 +26,13 @@ use crate::{
@@ -28,7 +28,7 @@ index 67b9d54..7edd9b2 100644
 -                value_template.render_string(&event),
 -            ) {
 -                labels.push((key, value));
-+            if (value_template.is_dynamic() && !(key_template.is_dynamic())){
++            if value_template.is_dynamic() && !key_template.is_dynamic() {
 +                if let Ok(key) = key_template.render_string(&event) {
 +                    if re.is_match(value_template.get_ref()) {
 +                        let template_key = re.replace_all(value_template.get_ref(), "$template_key");
@@ -56,7 +56,7 @@ index 67b9d54..7edd9b2 100644
 +                                    }
 +                                },
 +                                _ => {
-+                                    if let Ok(value) = template.render_string(&event) {
++                                    if let Ok(value) = value_template.render_string(&event) {
 +                                        labels.push((key.clone(), value));
 +                                    }
 +                                },

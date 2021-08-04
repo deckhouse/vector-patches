@@ -1,16 +1,97 @@
-diff --git a/src/kubernetes/reflector.rs b/src/kubernetes/reflector.rs
-index b2e2f92..303383f 100644
---- a/src/kubernetes/reflector.rs
-+++ b/src/kubernetes/reflector.rs
-@@ -195,6 +195,11 @@ where
-         match event {
-             WatchEvent::Added(object) => {
-                 trace!(message = "Got an object event.", event = "added");
-+                println!("Got object: {}", object.KIND);
-+                // Add owner here
-+                //if object.metadata.owner_references.len() > 0 {
-+                //    println!("Got {} {}", object.metadata.owner_references[0].kind, object.metadata.owner_references[0].name);
-+                //}
-                 self.state_writer.add(object).await;
-             }
-             WatchEvent::Deleted(object) => {
+diff --git a/src/kubernetes/hash_value.rs b/src/kubernetes/hash_value.rs
+index 71003fc..cc2f61b 100644
+--- a/src/kubernetes/hash_value.rs
++++ b/src/kubernetes/hash_value.rs
+@@ -34,6 +34,12 @@ where
+         }
+         Some(metadata.uid.as_ref()?.as_str())
+     }
++
++    /// Get the `metadata` from the `T`'.
++    pub fn metadata(&self) -> Option<&ObjectMeta> {
++        let metadata = self.0.metadata();
++        Some(metadata)
++    }
+ }
+ 
+ impl<T> PartialEq<Self> for HashValue<T>
+diff --git a/src/kubernetes/state/evmap.rs b/src/kubernetes/state/evmap.rs
+index aa762db..eaacf16 100644
+--- a/src/kubernetes/state/evmap.rs
++++ b/src/kubernetes/state/evmap.rs
+@@ -1,11 +1,13 @@
+ //! A state implementation backed by [`evmap`].
+ 
+-use crate::kubernetes::{debounce::Debounce, hash_value::HashValue};
++use crate::kubernetes::{debounce::Debounce, hash_value::HashValue, client::Client, client::config::Config};
+ use async_trait::async_trait;
+ use evmap::WriteHandle;
+ use futures::future::BoxFuture;
+-use k8s_openapi::{apimachinery::pkg::apis::meta::v1::ObjectMeta, Metadata};
++use k8s_openapi::{apimachinery::pkg::apis::meta::v1::ObjectMeta, Metadata, api::apps::v1::ReplicaSet, api::batch::v1::Job, ListOptional};
+ use std::time::Duration;
++use std::string::String;
++//use http::{StatusCode, Request, Response, HttpError};
+ 
+ /// A [`WriteHandle`] wrapper that implements [`super::Write`].
+ /// For use as a state writer implementation for
+@@ -66,6 +68,59 @@ where
+ 
+     async fn add(&mut self, item: Self::Item) {
+         if let Some((key, value)) = kv(item) {
++            // Mutate object on adding
++            if let Some(tmp_metadata) = value.metadata() {
++                let owner_references = (&tmp_metadata.owner_references).to_owned();
++                let namespace = (&tmp_metadata.namespace).as_ref();
++                let namespace = namespace.unwrap();
++                if owner_references.len() > 0 {
++                    let kind = &owner_references[0].kind;
++                    let name = &owner_references[0].name;
++                    let api_version = &owner_references[0].api_version;
++                    let tmp_owner = format!("{}/{}", kind, name);
++                    println!("Got reference {}", tmp_owner);
++                    match kind.as_str() {
++                        "ReplicaSet" | "Job" => {
++                            println!("We need to go deeper");
++                            if let Ok(k8s_config) = Config::in_cluster() {
++                                if let Ok(client) = Client::new(k8s_config) {
++                                    println!("Client created");
++                                    let field_selector = format!("metadata.name={}", name);
++                                    let list_optional = ListOptional {
++                                        field_selector: Some(&field_selector),
++                                        label_selector: None,
++                                        limit: Some(1),
++                                        pretty: None,
++                                        resource_version: Some(api_version),
++                                        timeout_seconds: Some(290), // https://github.com/kubernetes/kubernetes/issues/6513
++                                        continue_: None,
++                                    };
++                                    match kind.as_str() {
++                                        "ReplicaSet" => {
++                                            if let Ok((request, response_body)) = ReplicaSet::list_namespaced_replica_set(namespace, list_optional) {
++                                                println!("request created");
++                                                let (parts, body) = request.into_parts();
++                                                println!("Method: {}", parts.method);
++                                            };
++                                        },
++                                        "Job" => {
++                                            if let Ok((request, response_body)) = Job::list_namespaced_job(namespace, list_optional) {
++                                                println!("request created");
++                                                let (parts, body) = request.into_parts();
++                                                println!("Method: {}", parts.method);
++                                            };
++                                        },
++					_ => {},
++                                    };
++                                };
++                            };
++                        },
++                        _ => {
++                            println!("Nothing to go deeper");
++                        }
++                    }
++                }
++            }
+             self.inner.insert(key, value);
+             self.debounced_flush();
+         }
