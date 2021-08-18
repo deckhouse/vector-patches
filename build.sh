@@ -10,14 +10,14 @@ fi
 source "$HOME/.cargo/env"
 cargo install cross
 if [ ! -e $VECTOR_PATH ]; then
-  git clone --depth 1 --branch v0.15.1 https://github.com/timberio/vector.git
+  git clone --depth 1 --branch v0.15.2 https://github.com/timberio/vector.git
   cd $VECTOR_PATH
 else
   cd $VECTOR_PATH
   git checkout .
 fi
 git apply ${CUR_PATH}/loki-labels.patch
-#git apply ${CUR_PATH}/kubernetes_logs-lib.patch
+git apply ${CUR_PATH}/kubernetes_logs-lib.patch
 git apply ${CUR_PATH}/kubernetes_logs-owner-ref.patch
 # specify packages you need
 for package in `echo "package-x86_64-unknown-linux-musl"`; do
