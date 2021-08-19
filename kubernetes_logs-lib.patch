@@ -21,7 +21,7 @@ index 71003fc..67a0e74 100644
  
  impl<T> PartialEq<Self> for HashValue<T>
 diff --git a/src/kubernetes/state/evmap.rs b/src/kubernetes/state/evmap.rs
-index aa762db..476867a 100644
+index aa762db..33e2b95 100644
 --- a/src/kubernetes/state/evmap.rs
 +++ b/src/kubernetes/state/evmap.rs
 @@ -1,12 +1,22 @@
@@ -49,7 +49,7 @@ index aa762db..476867a 100644
  /// A [`WriteHandle`] wrapper that implements [`super::Write`].
  /// For use as a state writer implementation for
  /// [`crate::kubernetes::Reflector`].
-@@ -65,9 +75,139 @@ where
+@@ -65,16 +75,42 @@ where
      type Item = T;
  
      async fn add(&mut self, item: Self::Item) {
@@ -63,128 +63,11 @@ index aa762db..476867a 100644
 +            let namespace = tmp_metadata.namespace.as_ref();
 +            let namespace = namespace.unwrap();
 +            if owner_references.len() > 0 {
-+                let mut mut_owner_references: Vec<OwnerReference> = Vec::new();
-+                mut_owner_references.push(owner_references[0].clone());
-+                let kind = &owner_references[0].kind;
-+                let name = &owner_references[0].name;
-+                match kind.as_str() {
-+                    "ReplicaSet" | "Job" => {
-+                        if let Ok(k8s_config) = Config::in_cluster() {
-+                            if let Ok(mut client) = Client::new(k8s_config) {
-+                                let field_selector = format!("metadata.name={}", name);
-+                                let list_optional = ListOptional {
-+                                    field_selector: Some(&field_selector),
-+                                    label_selector: None,
-+                                    limit: Some(1),
-+                                    pretty: None,
-+                                    resource_version: None,
-+                                    timeout_seconds: Some(290), // https://github.com/kubernetes/kubernetes/issues/6513
-+                                    continue_: None,
-+                                };
-+                                match kind.as_str() {
-+                                    "ReplicaSet" => {
-+                                        if let Ok((request, _response_body)) =
-+                                            ReplicaSet::list_namespaced_replica_set(
-+                                                namespace,
-+                                                list_optional,
-+                                            )
-+                                        {
-+                                            let response = match client.send(request).await {
-+                                                Ok(response) => response,
-+                                                Err(_source) => Response::builder()
-+                                                    .status(StatusCode::NOT_FOUND)
-+                                                    .body(Body::empty())
-+                                                    .unwrap(),
-+                                            };
-+                                            let status_code: StatusCode = response.status();
-+                                            if status_code == StatusCode::OK {
-+                                                // Stream response body.
-+                                                let mut response_body = _response_body(status_code);
-+                                                if let Ok(body) =
-+                                                    body::to_bytes(response.into_body()).await
-+                                                {
-+                                                    response_body.append_slice(&body);
-+                                                    if let Ok(k8s_openapi::ListResponse::Ok(
-+                                                        rs_list,
-+                                                    )) = response_body.parse()
-+                                                    {
-+                                                        if rs_list.items.len() > 0 {
-+                                                            let rs: ReplicaSet =
-+                                                                rs_list.items[0].clone();
-+                                                            if rs.metadata().owner_references.len()
-+                                                                > 0
-+                                                            {
-+                                                                mut_owner_references.drain(..);
-+                                                                mut_owner_references.push(
-+                                                                    rs.metadata().owner_references
-+                                                                        [0]
-+                                                                    .clone(),
-+                                                                );
-+                                                            }
-+                                                        }
-+                                                    }
-+                                                }
-+                                            }
-+                                        };
-+                                    }
-+                                    "Job" => {
-+                                        if let Ok((request, _response_body)) =
-+                                            Job::list_namespaced_job(namespace, list_optional)
-+                                        {
-+                                            let response = match client.send(request).await {
-+                                                Ok(response) => response,
-+                                                Err(_source) => Response::builder()
-+                                                    .status(StatusCode::NOT_FOUND)
-+                                                    .body(Body::empty())
-+                                                    .unwrap(),
-+                                            };
-+                                            let status_code: StatusCode = response.status();
-+                                            if status_code == StatusCode::OK {
-+                                                // Stream response body.
-+                                                let mut response_body = _response_body(status_code);
-+                                                if let Ok(body) =
-+                                                    body::to_bytes(response.into_body()).await
-+                                                {
-+                                                    response_body.append_slice(&body);
-+                                                    if let Ok(k8s_openapi::ListResponse::Ok(
-+                                                        job_list,
-+                                                    )) = response_body.parse()
-+                                                    {
-+                                                        if job_list.items.len() > 0 {
-+                                                            let job: Job =
-+                                                                job_list.items[0].clone();
-+                                                            if job.metadata().owner_references.len()
-+                                                                > 0
-+                                                            {
-+                                                                mut_owner_references.drain(..);
-+                                                                mut_owner_references.push(
-+                                                                    job.metadata().owner_references
-+                                                                        [0]
-+                                                                    .clone(),
-+                                                                );
-+                                                            }
-+                                                        }
-+                                                    }
-+                                                }
-+                                            }
-+                                        };
-+                                    }
-+                                    _ => {}
-+                                };
-+                            };
-+                        };
-+                    }
-+                    _ => {}
-+                }
-+                if mut_owner_references[0].kind != *kind && mut_owner_references[0].name != *name {
-+                    let mut_meta = value.metadata_mut();
-+                    mut_meta.owner_references[0] = mut_owner_references[0].clone();
-+                    self.inner.insert(key, value);
-+                    self.debounced_flush();
-+                } else {
-+                    self.inner.insert(key, value);
-+                    self.debounced_flush();
-+                };
++                let mut_meta = value.metadata_mut();
++                mut_meta.owner_references[0] =
++                    mutate_owner(namespace.to_string(), owner_references[0].clone()).await.clone();
++                self.inner.insert(key, value);
++                self.debounced_flush();
 +            } else {
 +                self.inner.insert(key, value);
 +                self.debounced_flush();
@@ -192,3 +75,132 @@ index aa762db..476867a 100644
          }
      }
  
+     async fn update(&mut self, item: Self::Item) {
+-        if let Some((key, value)) = kv(item) {
+-            self.inner.update(key, value);
+-            self.debounced_flush();
++        if let Some((key, mut value)) = kv(item) {
++            // Mutate object on adding
++            let tmp_metadata = value.metadata();
++            let owner_references = tmp_metadata.owner_references.to_owned();
++            let namespace = tmp_metadata.namespace.as_ref();
++            let namespace = namespace.unwrap();
++            if owner_references.len() > 0 {
++                let mut_meta = value.metadata_mut();
++                mut_meta.owner_references[0] =
++                    mutate_owner(namespace.to_string(), owner_references[0].clone()).await.clone();
++                self.inner.update(key, value);
++                self.debounced_flush();
++            } else {
++                self.inner.update(key, value);
++                self.debounced_flush();
++            }
+         }
+     }
+ 
+@@ -125,6 +161,105 @@ fn kv<T: Metadata<Ty = ObjectMeta>>(object: T) -> Option<(String, Value<T>)> {
+     Some((key, value))
+ }
+ 
++/// Owner mutator
++async fn mutate_owner(namespace: String, owner_ref: OwnerReference) -> OwnerReference {
++    let mut mut_owner_references: Vec<OwnerReference> = Vec::new();
++    let kind = owner_ref.kind.clone();
++    let name = owner_ref.name.clone();
++    mut_owner_references.push(owner_ref);
++    match kind.as_str() {
++        "ReplicaSet" | "Job" => {
++            if let Ok(k8s_config) = Config::in_cluster() {
++                if let Ok(mut client) = Client::new(k8s_config) {
++                    let field_selector = format!("metadata.name={}", name);
++                    let list_optional = ListOptional {
++                        field_selector: Some(&field_selector),
++                        label_selector: None,
++                        limit: Some(1),
++                        pretty: None,
++                        resource_version: None,
++                        timeout_seconds: Some(290), // https://github.com/kubernetes/kubernetes/issues/6513
++                        continue_: None,
++                    };
++                    match kind.as_str() {
++                        "ReplicaSet" => {
++                            if let Ok((request, _response_body)) =
++                                ReplicaSet::list_namespaced_replica_set(&namespace, list_optional)
++                            {
++                                let response = match client.send(request).await {
++                                    Ok(response) => response,
++                                    Err(_source) => Response::builder()
++                                        .status(StatusCode::NOT_FOUND)
++                                        .body(Body::empty())
++                                        .unwrap(),
++                                };
++                                let status_code: StatusCode = response.status();
++                                if status_code == StatusCode::OK {
++                                    // Stream response body.
++                                    let mut response_body = _response_body(status_code);
++                                    if let Ok(body) = body::to_bytes(response.into_body()).await {
++                                        response_body.append_slice(&body);
++                                        if let Ok(k8s_openapi::ListResponse::Ok(rs_list)) =
++                                            response_body.parse()
++                                        {
++                                            if rs_list.items.len() > 0 {
++                                                let rs: ReplicaSet = rs_list.items[0].clone();
++                                                if rs.metadata().owner_references.len() > 0 {
++                                                    mut_owner_references.drain(..);
++                                                    mut_owner_references.push(
++                                                        rs.metadata().owner_references[0].clone(),
++                                                    );
++                                                }
++                                            }
++                                        }
++                                    }
++                                }
++                            };
++                        }
++                        "Job" => {
++                            if let Ok((request, _response_body)) =
++                                Job::list_namespaced_job(&namespace, list_optional)
++                            {
++                                let response = match client.send(request).await {
++                                    Ok(response) => response,
++                                    Err(_source) => Response::builder()
++                                        .status(StatusCode::NOT_FOUND)
++                                        .body(Body::empty())
++                                        .unwrap(),
++                                };
++                                let status_code: StatusCode = response.status();
++                                if status_code == StatusCode::OK {
++                                    // Stream response body.
++                                    let mut response_body = _response_body(status_code);
++                                    if let Ok(body) = body::to_bytes(response.into_body()).await {
++                                        response_body.append_slice(&body);
++                                        if let Ok(k8s_openapi::ListResponse::Ok(job_list)) =
++                                            response_body.parse()
++                                        {
++                                            if job_list.items.len() > 0 {
++                                                let job: Job = job_list.items[0].clone();
++                                                if job.metadata().owner_references.len() > 0 {
++                                                    mut_owner_references.drain(..);
++                                                    mut_owner_references.push(
++                                                        job.metadata().owner_references[0].clone(),
++                                                    );
++                                                }
++                                            }
++                                        }
++                                    }
++                                }
++                            };
++                        }
++                        _ => {}
++                    };
++                };
++            };
++        }
++        _ => {}
++    }
++    mut_owner_references[0].clone()
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
