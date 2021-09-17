@@ -1,22 +1,27 @@
 diff --git a/src/sinks/loki.rs b/src/sinks/loki.rs
-index 67b9d54..833f74a 100644
+index 67b9d54..5dc0d06 100644
 --- a/src/sinks/loki.rs
 +++ b/src/sinks/loki.rs
-@@ -26,10 +26,13 @@ use crate::{
-     },
-     template::Template,
-     tls::{TlsOptions, TlsSettings},
+@@ -16,6 +16,7 @@ use crate::{
+     config::{log_schema, DataType, GenerateConfig, SinkConfig, SinkContext, SinkDescription},
+     event::{self, Event, Value},
+     http::{Auth, HttpClient, MaybeAuth},
 +    internal_events::TemplateRenderingFailed,
+     sinks::util::{
+         buffer::loki::{GlobalTimestamps, LokiBuffer, LokiEvent, LokiRecord, PartitionKey},
+         encoding::{EncodingConfig, EncodingConfiguration},
+@@ -28,8 +29,10 @@ use crate::{
+     tls::{TlsOptions, TlsSettings},
  };
  use futures::{FutureExt, SinkExt};
++use regex::Regex;
  use serde::{Deserialize, Serialize};
  use std::collections::HashMap;
-+use regex::Regex;
 +use std::convert::TryFrom;
  
  #[derive(Clone, Debug, Deserialize, Serialize)]
  #[serde(deny_unknown_fields)]
-@@ -197,12 +200,52 @@ impl HttpSink for LokiSink {
+@@ -197,12 +200,63 @@ impl HttpSink for LokiSink {
  
          let mut labels = Vec::new();
  
@@ -31,20 +36,31 @@ index 67b9d54..833f74a 100644
 +            if value_template.is_dynamic() && !key_template.is_dynamic() {
 +                if let Ok(key) = key_template.render_string(&event) {
 +                    if re.is_match(value_template.get_ref()) {
-+                        let template_key = re.replace_all(value_template.get_ref(), "$template_key");
++                        let template_key =
++                            re.replace_all(value_template.get_ref(), "$template_key");
 +                        if let Some(_internal_val) = event.as_log().get(template_key.clone()) {
 +                            match _internal_val {
 +                                Value::Map(_map) => {
-+                                    let _map = event.as_log().get(template_key.clone()).unwrap().as_map().unwrap();
++                                    let _map = event
++                                        .as_log()
++                                        .get(template_key.clone())
++                                        .unwrap()
++                                        .as_map()
++                                        .unwrap();
 +                                    let intkeys: Vec<_> = _map.keys().cloned().collect();
 +                                    for int_key in intkeys.iter() {
-+                                        let tmp_key = format!("{{{{ {}.{} }}}}", key, convert_key(int_key.to_string()));
++                                        let tmp_key = format!(
++                                            "{{{{ {}.{} }}}}",
++                                            template_key,
++                                            convert_key(int_key.to_string())
++                                        );
 +                                        let loki_key = slugify_text(format!("{}_{}", key, int_key));
-+                                        let tmp_template = Template::try_from(tmp_key.clone()).unwrap();
++                                        let tmp_template =
++                                            Template::try_from(tmp_key.clone()).unwrap();
 +                                        let _str_val = match tmp_template.render_string(&event) {
 +                                            Ok(str_val) => {
 +                                                labels.push((loki_key.clone(), str_val));
-+                                            },
++                                            }
 +                                            Err(error) => {
 +                                                emit!(TemplateRenderingFailed {
 +                                                    error,
@@ -54,12 +70,12 @@ index 67b9d54..833f74a 100644
 +                                            }
 +                                        };
 +                                    }
-+                                },
++                                }
 +                                _ => {
 +                                    if let Ok(value) = value_template.render_string(&event) {
 +                                        labels.push((key.clone(), value));
 +                                    }
-+                                },
++                                }
 +                            }
 +                        }
 +                    }
@@ -74,21 +90,24 @@ index 67b9d54..833f74a 100644
              }
          }
  
-@@ -299,6 +342,19 @@ async fn healthcheck(config: LokiConfig, client: HttpClient) -> crate::Result<()
+@@ -299,6 +353,22 @@ async fn healthcheck(config: LokiConfig, client: HttpClient) -> crate::Result<()
      Ok(())
  }
  
 +// convert strings to Loki format
-+fn slugify_text (s: String) -> String {
++fn slugify_text(s: String) -> String {
 +    let re = Regex::new(r"[^0-9A-Za-z_]").unwrap();
 +    let result = re.replace_all(&s, "_");
 +    return result.to_lowercase();
 +}
 +
 +// convert keys to template format
-+fn convert_key (s: String) -> String {
-+    let res = s.replace(".", "\\.").replace("]", "\\]").replace("[", "\\[");
-+    return res
++fn convert_key(s: String) -> String {
++    let res = s
++        .replace(".", "\\.")
++        .replace("]", "\\]")
++        .replace("[", "\\[");
++    return res;
 +}
 +
  #[cfg(test)]
