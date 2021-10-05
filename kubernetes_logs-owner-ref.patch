@@ -1,5 +1,25 @@
+diff --git a/src/sources/kubernetes_logs/mod.rs b/src/sources/kubernetes_logs/mod.rs
+index 2a041d2..d395e00 100644
+--- a/src/sources/kubernetes_logs/mod.rs
++++ b/src/sources/kubernetes_logs/mod.rs
+@@ -274,6 +274,7 @@ impl Source {
+         let (state_reader, state_writer) = evmap::new();
+         let state_writer = k8s::state::evmap::Writer::new(
+             state_writer,
++            client.clone(),
+             Some(Duration::from_millis(10)),
+             HashKey::Uid,
+         );
+@@ -298,6 +299,7 @@ impl Source {
+         let (ns_state_reader, ns_state_writer) = evmap::new();
+         let ns_state_writer = k8s::state::evmap::Writer::new(
+             ns_state_writer,
++            client.clone(),
+             Some(Duration::from_millis(10)),
+             HashKey::Name,
+         );
 diff --git a/src/sources/kubernetes_logs/pod_metadata_annotator.rs b/src/sources/kubernetes_logs/pod_metadata_annotator.rs
-index c6d67c3..46ff7f0 100644
+index 6cd31cb..b472ed9 100644
 --- a/src/sources/kubernetes_logs/pod_metadata_annotator.rs
 +++ b/src/sources/kubernetes_logs/pod_metadata_annotator.rs
 @@ -24,6 +24,7 @@ pub struct FieldsSpec {
@@ -18,16 +38,17 @@ index c6d67c3..46ff7f0 100644
              container_name: "kubernetes.container_name".to_owned(),
              container_id: "kubernetes.container_id".to_owned(),
              container_image: "kubernetes.container_image".to_owned(),
-@@ -130,6 +132,12 @@ fn annotate_from_metadata(log: &mut LogEvent, fields_spec: &FieldsSpec, metadata
+@@ -131,6 +133,13 @@ fn annotate_from_metadata(log: &mut LogEvent, fields_spec: &FieldsSpec, metadata
          }
      }
  
-+    let owner_references = (&metadata.owner_references).to_owned();
-+
-+    if owner_references.len() > 0 {
-+        let tmp_owner = format!("{}/{}", owner_references[0].kind, owner_references[0].name);
-+        log.insert(&fields_spec.pod_owner, tmp_owner);
++    if let Some(owner_references) = &metadata.owner_references {
++        log.insert(
++            &fields_spec.pod_owner,
++            format!("{}/{}", owner_references[0].kind, owner_references[0].name),
++        );
 +    }
-     // Calculate and cache the prefix path.
-     let prefix_path = PathIter::new(fields_spec.pod_labels.as_ref()).collect::<Vec<_>>();
-     for (key, val) in metadata.labels.iter() {
++
+     if let Some(labels) = &metadata.labels {
+         // Calculate and cache the prefix path.
+         let prefix_path = PathIter::new(fields_spec.pod_labels.as_ref()).collect::<Vec<_>>();
