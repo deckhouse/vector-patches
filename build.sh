@@ -10,7 +10,7 @@ fi
 source "$HOME/.cargo/env"
 cargo install cross
 if [ ! -e $VECTOR_PATH ]; then
-  git clone --depth 1 --branch v0.16.1 https://github.com/timberio/vector.git
+  git clone --depth 1 --branch v0.17.3 https://github.com/timberio/vector.git
   cd $VECTOR_PATH
 else
   cd $VECTOR_PATH
