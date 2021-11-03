@@ -1,27 +1,20 @@
 diff --git a/src/sinks/loki.rs b/src/sinks/loki.rs
-index 09078e2..82bd8b1 100644
+index bb50da5..3dbe7b5 100644
 --- a/src/sinks/loki.rs
 +++ b/src/sinks/loki.rs
-@@ -15,6 +15,7 @@ use crate::{
-     config::{log_schema, DataType, GenerateConfig, SinkConfig, SinkContext, SinkDescription},
-     event::{self, Event, Value},
-     http::{Auth, HttpClient, MaybeAuth},
-+    internal_events::TemplateRenderingFailed,
-     sinks::util::{
-         buffer::loki::{GlobalTimestamps, LokiBuffer, LokiEvent, LokiRecord, PartitionKey},
-         encoding::{EncodingConfig, EncodingConfiguration},
-@@ -26,8 +27,10 @@ use crate::{
+@@ -27,9 +27,11 @@ use crate::{
      tls::{TlsOptions, TlsSettings},
  };
  use futures::{FutureExt, SinkExt};
 +use regex::Regex;
  use serde::{Deserialize, Serialize};
+ use shared::encode_logfmt;
  use std::collections::HashMap;
 +use std::convert::TryFrom;
  
  #[derive(Clone, Debug, Deserialize, Serialize)]
  #[serde(deny_unknown_fields)]
-@@ -200,12 +203,63 @@ impl HttpSink for LokiSink {
+@@ -203,12 +205,63 @@ impl HttpSink for LokiSink {
  
          let mut labels = Vec::new();
  
@@ -62,7 +55,7 @@ index 09078e2..82bd8b1 100644
 +                                                labels.push((loki_key.clone(), str_val));
 +                                            }
 +                                            Err(error) => {
-+                                                emit!(TemplateRenderingFailed {
++                                                emit!(&TemplateRenderingFailed {
 +                                                    error,
 +                                                    field: Some(&tmp_key),
 +                                                    drop_event: false,
@@ -90,7 +83,7 @@ index 09078e2..82bd8b1 100644
              }
          }
  
-@@ -345,6 +399,22 @@ fn valid_label_name(label: &Template) -> bool {
+@@ -358,6 +411,22 @@ fn valid_label_name(label: &Template) -> bool {
      }
  }
  
