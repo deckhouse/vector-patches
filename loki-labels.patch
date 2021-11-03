@@ -1,8 +1,8 @@
 diff --git a/src/sinks/loki.rs b/src/sinks/loki.rs
-index 67b9d54..5dc0d06 100644
+index 09078e2..82bd8b1 100644
 --- a/src/sinks/loki.rs
 +++ b/src/sinks/loki.rs
-@@ -16,6 +16,7 @@ use crate::{
+@@ -15,6 +15,7 @@ use crate::{
      config::{log_schema, DataType, GenerateConfig, SinkConfig, SinkContext, SinkDescription},
      event::{self, Event, Value},
      http::{Auth, HttpClient, MaybeAuth},
@@ -10,7 +10,7 @@ index 67b9d54..5dc0d06 100644
      sinks::util::{
          buffer::loki::{GlobalTimestamps, LokiBuffer, LokiEvent, LokiRecord, PartitionKey},
          encoding::{EncodingConfig, EncodingConfiguration},
-@@ -28,8 +29,10 @@ use crate::{
+@@ -26,8 +27,10 @@ use crate::{
      tls::{TlsOptions, TlsSettings},
  };
  use futures::{FutureExt, SinkExt};
@@ -21,7 +21,7 @@ index 67b9d54..5dc0d06 100644
  
  #[derive(Clone, Debug, Deserialize, Serialize)]
  #[serde(deny_unknown_fields)]
-@@ -197,12 +200,63 @@ impl HttpSink for LokiSink {
+@@ -200,12 +203,63 @@ impl HttpSink for LokiSink {
  
          let mut labels = Vec::new();
  
@@ -90,8 +90,8 @@ index 67b9d54..5dc0d06 100644
              }
          }
  
-@@ -299,6 +353,22 @@ async fn healthcheck(config: LokiConfig, client: HttpClient) -> crate::Result<()
-     Ok(())
+@@ -345,6 +399,22 @@ fn valid_label_name(label: &Template) -> bool {
+     }
  }
  
 +// convert strings to Loki format
